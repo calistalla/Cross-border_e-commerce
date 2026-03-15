@@ -1,4 +1,5 @@
 import streamlit as st
+from services.mock_data_service import init_analysis_state, init_report_state
 from components.layout import (
     init_page_config,
     inject_global_style,
@@ -23,7 +24,9 @@ inject_global_style()
 # 3. 初始化页面状态
 if "current_page" not in st.session_state:
     st.session_state.current_page = "首页"
-
+# 4. 初始化分析状态
+init_analysis_state()
+init_report_state()
 # 4. 左侧导航
 render_sidebar()
 
