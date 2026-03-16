@@ -14,6 +14,8 @@ from components.dashboard import (
     render_bar_chart,
     render_analysis_flow,
     render_section_header,
+    render_table_block,
+    build_excel_bytes,
 )
 
 from services.mock_data_service import (
@@ -1282,6 +1284,30 @@ def render_investor_page():
     with chart_col2:
         st.markdown("##### 同业对比")
         render_bar_chart(investor_data.get("compare_data"), "类别", "评分")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="module-box">', unsafe_allow_html=True)
+    render_section_header("结构化表格", "展示风险标记、明细结果等结构化数据，并支持 Excel 导出。")
+
+    tables_data = investor_data.get("tables", {})
+
+    if not tables_data:
+        st.info("当前没有结构化表格数据。")
+    else:
+        for table_name, table_value in tables_data.items():
+            render_table_block(table_value, title=table_name)
+
+        excel_bytes = build_excel_bytes(tables_data)
+
+        st.download_button(
+            label="下载表格数据（Excel）",
+            data=excel_bytes,
+            file_name="investor_tables.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_investor_excel",
+            use_container_width=True,
+        )
+
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="module-box">', unsafe_allow_html=True)

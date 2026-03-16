@@ -1,16 +1,11 @@
 import streamlit as st
+import pandas as pd
+import io
 
 
 def render_metric_panel(metrics: dict):
     """
     渲染顶部指标卡
-    参数示例：
-    {
-        "风险等级": "中等",
-        "增长质量": "良好",
-        "现金流安全": "稳定",
-        "行业位置": "前40%"
-    }
     """
     if not metrics:
         st.info("暂无指标数据")
@@ -49,31 +44,73 @@ def render_analysis_summary(summary_text: str):
     )
 
 
+def normalize_chart_data(data):
+    """
+    统一图表输入格式：
+    - DataFrame -> 原样返回
+    - list[dict] -> 转 DataFrame
+    - dict -> 转单行 DataFrame
+    - 其他 -> 返回 None
+    """
+    if data is None:
+        return None
+
+    if isinstance(data, pd.DataFrame):
+        return data
+
+    if isinstance(data, list):
+        if len(data) == 0:
+            return pd.DataFrame()
+        if isinstance(data[0], dict):
+            return pd.DataFrame(data)
+
+    if isinstance(data, dict):
+        return pd.DataFrame([data])
+
+    return None
+
+
 def render_line_chart(data, x_col: str, y_col: str):
     """
     渲染折线图
+    支持 DataFrame 或 list[dict]
     """
-    if data is None or data.empty:
+    df = normalize_chart_data(data)
+
+    if df is None or df.empty:
         st.info("暂无折线图数据")
         return
 
-    st.line_chart(data.set_index(x_col)[y_col])
+    if x_col not in df.columns or y_col not in df.columns:
+        st.warning(f"折线图字段不匹配，缺少列：{x_col} 或 {y_col}")
+        st.write(df)
+        return
+
+    st.line_chart(df.set_index(x_col)[y_col])
 
 
 def render_bar_chart(data, x_col: str, y_col: str):
     """
     渲染柱状图
+    支持 DataFrame 或 list[dict]
     """
-    if data is None or data.empty:
+    df = normalize_chart_data(data)
+
+    if df is None or df.empty:
         st.info("暂无柱状图数据")
         return
 
-    st.bar_chart(data.set_index(x_col)[y_col])
+    if x_col not in df.columns or y_col not in df.columns:
+        st.warning(f"柱状图字段不匹配，缺少列：{x_col} 或 {y_col}")
+        st.write(df)
+        return
+
+    st.bar_chart(df.set_index(x_col)[y_col])
+
 
 def render_analysis_flow(role: str):
     """
     渲染智能体分析流程区
-    后续可替换成真实 Coze 工作流状态
     """
     role_map = {
         "investor": {
@@ -118,10 +155,10 @@ def render_analysis_flow(role: str):
                 unsafe_allow_html=True,
             )
 
+
 def render_section_header(title: str, desc: str = ""):
     """
     统一的页面区块标题
-    后续可继续升级成更强视觉模块
     """
     st.markdown(
         f"""
@@ -132,3 +169,42 @@ def render_section_header(title: str, desc: str = ""):
         """,
         unsafe_allow_html=True,
     )
+
+def render_table_block(data, title: str = "结构化表格"):
+    """
+    渲染结构化表格，支持 DataFrame / list[dict] / dict
+    """
+    df = normalize_chart_data(data)
+
+    st.markdown(f"##### {title}")
+
+    if df is None or df.empty:
+        st.info("暂无表格数据")
+        return
+
+    st.dataframe(df, use_container_width=True)
+
+
+def build_excel_bytes(table_dict: dict):
+    """
+    将多个表格打包为一个 Excel 文件（二进制）
+    table_dict 示例：
+    {
+        "risk_flags": [...],
+        "other_table": [...]
+    }
+    """
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        for sheet_name, table_data in table_dict.items():
+            df = normalize_chart_data(table_data)
+
+            if df is None or df.empty:
+                continue
+
+            safe_sheet_name = str(sheet_name)[:31]
+            df.to_excel(writer, index=False, sheet_name=safe_sheet_name)
+
+    output.seek(0)
+    return output.getvalue()

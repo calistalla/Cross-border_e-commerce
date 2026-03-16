@@ -9,12 +9,25 @@ def init_chat(role):
         st.session_state.chat_history[role] = []
 
 
+def normalize_agent_result(result):
+    """
+    兼容两种情况：
+    1. 旧版：智能体直接返回字符串
+    2. 新版：智能体返回统一协议 dict
+    """
+    if isinstance(result, dict):
+        reply_text = result.get("reply_text", "")
+        structured_data = result.get("structured_data", {})
+        return reply_text, structured_data
+
+    return str(result), {}
+
+
 def render_chat(role, agent_function, on_response=None):
     """
     role: 当前角色标识
-    agent_function: 智能体函数，输入 user_input，输出文本回复
-    on_response: 可选回调函数，参数为 (role, user_input, response)
-                 用于在收到回复后，同步刷新指标、摘要、图表等状态
+    agent_function: 智能体函数
+    on_response: 回调函数，参数为 (role, user_input, reply_text, structured_data)
     """
     init_chat(role)
 
@@ -39,16 +52,17 @@ def render_chat(role, agent_function, on_response=None):
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        response = agent_function(user_input)
+        result = agent_function(user_input)
+        reply_text, structured_data = normalize_agent_result(result)
 
         st.session_state.chat_history[role].append(
-            {"role": "assistant", "content": response}
+            {"role": "assistant", "content": reply_text}
         )
 
         if on_response is not None:
-            on_response(role, user_input, response)
+            on_response(role, user_input, reply_text, structured_data)
 
         with st.chat_message("assistant"):
-            st.markdown(response)
+            st.markdown(reply_text)
 
         st.rerun()

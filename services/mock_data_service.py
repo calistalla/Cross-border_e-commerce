@@ -114,14 +114,38 @@ def init_analysis_state():
         }
 
 
-def update_analysis_state(role: str, user_input: str, response: str):
+def update_analysis_state(role: str, user_input: str, response: str, structured_data: dict | None = None):
     """
-    当前先做前端联动演示：
-    根据提问内容，对页面中的指标、摘要做轻量变化。
-    后续接入 Coze 后，可以直接用 Coze / 后端返回的结构化数据覆盖这里。
+    优先使用智能体返回的 structured_data；
+    如果没有结构化结果，再退回原来的关键词模拟逻辑。
     """
     init_analysis_state()
+    structured_data = structured_data or {}
 
+    # =========================
+    # 第一优先级：使用真实结构化结果
+    # =========================
+    if structured_data:
+        current_state = st.session_state.analysis_state.get(role, {}).copy()
+
+        metrics = structured_data.get("metrics") or current_state.get("metrics", {})
+        summary = structured_data.get("summary") or current_state.get("summary", "")
+
+        charts = structured_data.get("charts", {})
+        trend_data = charts.get("trend_data", current_state.get("trend_data"))
+        compare_data = charts.get("compare_data", current_state.get("compare_data"))
+
+        st.session_state.analysis_state[role] = {
+            "metrics": metrics,
+            "summary": summary,
+            "trend_data": trend_data,
+            "compare_data": compare_data,
+        }
+        return
+
+    # =========================
+    # 第二优先级：没有结构化结果时，沿用原来的模拟逻辑
+    # =========================
     text = user_input.lower()
 
     if role == "investor":
@@ -206,18 +230,48 @@ def dataframe_to_text_table(df):
 
     return "\n".join(lines)
 
+def normalize_table_data(data):
+    """
+    统一表格/图表数据格式：
+    - DataFrame -> 原样返回
+    - list[dict] -> 转 DataFrame
+    - dict -> 转单行 DataFrame
+    - 其他 -> 返回 None
+    """
+    if data is None:
+        return None
+
+    if isinstance(data, pd.DataFrame):
+        return data
+
+    if isinstance(data, list):
+        if len(data) == 0:
+            return pd.DataFrame()
+        if isinstance(data[0], dict):
+            return pd.DataFrame(data)
+
+    if isinstance(data, dict):
+        return pd.DataFrame([data])
+
+    return None
+
 def build_role_report(role_name: str, analysis_data: dict, chat_history: list):
     """
     生成 markdown 格式报告文本
     后续可替换为 Coze / 后端返回的正式报告内容
     """
-    metrics = analysis_data.get("metrics", {})
-    summary = analysis_data.get("summary", "暂无摘要")
-    trend_data = analysis_data.get("trend_data")
-    compare_data = analysis_data.get("compare_data")
+    
 
     report_lines = []
-    report_lines.append(f"# {role_name}分析报告")
+    report_lines.append(f"# {role_name}分析报告")    
+    
+    metrics = analysis_data.get("metrics", {})
+    summary = analysis_data.get("summary", "暂无摘要")
+
+    trend_data = normalize_table_data(analysis_data.get("trend_data"))
+    compare_data = normalize_table_data(analysis_data.get("compare_data"))
+    tables_data = analysis_data.get("tables", {}) or {}
+
     report_lines.append("")
     report_lines.append("## 一、分析摘要")
     report_lines.append(summary)
@@ -242,7 +296,18 @@ def build_role_report(role_name: str, analysis_data: dict, chat_history: list):
         report_lines.append(dataframe_to_text_table(compare_data))
         report_lines.append("")
 
-    report_lines.append("## 四、对话记录")
+    report_lines.append("## 四、结构化表格")
+    if tables_data:
+        for table_name, table_value in tables_data.items():
+            df = normalize_table_data(table_value)
+            report_lines.append(f"### {table_name}")
+            report_lines.append(dataframe_to_text_table(df))
+            report_lines.append("")
+    else:
+        report_lines.append("暂无结构化表格数据")
+        report_lines.append("")
+
+    report_lines.append("## 五、对话记录")
     if chat_history:
         for item in chat_history:
             speaker = "用户" if item["role"] == "user" else "智能体"
@@ -251,7 +316,7 @@ def build_role_report(role_name: str, analysis_data: dict, chat_history: list):
         report_lines.append("- 暂无对话记录")
     report_lines.append("")
 
-    report_lines.append("## 五、说明")
+    report_lines.append("## 六、说明")
     report_lines.append("本报告为当前前端原型自动生成的结构化分析结果，后续可接入真实 Coze 智能体输出正式报告。")
 
     return "\n".join(report_lines)
